@@ -1,0 +1,114 @@
+#!/bin/bash
+# vim: set ts=4 sts=4 sw=4 et:
+#
+# Export a binary into a standalone directory. This is useful for
+# creating simple chroot environments.
+
+# global variables
+DRY_RUN=0
+DIRECTORY=''
+BINARIES=()
+
+stderr() {
+    echo "$@" >&2
+}
+
+die() {
+    stderr "$@"
+    exit 1
+}
+
+# Copy a single file (with parents) into a target directory
+#
+# $1: source file
+# $2: target directory
+copy_with_parents() {
+    local src="$1"
+    local dir="$2"
+
+    if [[ "$DRY_RUN" -ne "0" ]]; then
+        echo "copy: $src -> $dir$src"
+        return 0
+    fi
+
+    # Copy source file with parent directories preserved
+    cp --parents "$src" "$dir" || die "unable to copy $src -> $dir"
+
+    # Add user write permission to directory, so that we can copy
+    # more files later. Fixes situations where /bin is mode 0555.
+    chmod u+w "$(dirname "$dir"/"$src")"
+}
+
+usage() {
+    cat << EOF
+Usage: ${0##*/} [-hn] <directory> <binary ...>
+
+Export one or more binaries into a standalone directory, which can then
+be used as a chroot.
+
+-h      show this help output
+-n      do not perform any operations (test mode)
+EOF
+}
+
+OPTIND=1
+while getopts "hn" opt; do
+    case "$opt" in
+    h)
+        usage
+        exit 0
+        ;;
+    n)
+        DRY_RUN=1
+        ;;
+    '?')
+        usage >&2
+        exit 1
+        ;;
+    esac
+done
+
+# shift off the options and optional --
+shift "$((OPTIND-1))"
+
+[[ "$#" -eq 0 ]] && die 'ERROR: no directory specified'
+[[ "$#" -eq 1 ]] && die 'ERROR: no binaries specified'
+
+DIRECTORY="$(readlink -f "$1")" ; shift
+BINARIES=("$@")
+
+# check that all binaries exist, or can be found
+for ((i=0; i < "${#BINARIES[@]}" ; i++)) ; do
+    bin="${BINARIES[i]}"
+
+    # look up by absolute path first
+    if [[ -f "$bin" ]] ; then
+        continue
+    fi
+
+    # look up using shell next
+    if which "$bin" &> /dev/null ; then
+        BINARIES[i]="$(which "$bin")"
+        continue
+    fi
+
+    die "ERROR: unable to locate binary: $bin"
+done
+
+# create target directory
+if [[ "$DRY_RUN" -ne 0 ]] ; then
+    echo "create directory: $DIRECTORY"
+else
+    mkdir -p "$DIRECTORY" || die "ERROR: unable to create directory: $DIRECTORY"
+fi
+
+# copy each binary, and then the libraries it depends on
+for bin in "${BINARIES[@]}" ; do
+    copy_with_parents "$bin" "$DIRECTORY"
+
+    ldd "$bin" | cut -d'>' -f2 | awk '{ print $1; }' | while read lib ; do
+        if [[ -f "$lib" ]] ; then
+            copy_with_parents "$lib" "$DIRECTORY"
+        fi
+    done
+done
