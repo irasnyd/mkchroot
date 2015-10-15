@@ -5,7 +5,7 @@ Create a basic chroot environment by copying binaries and their library
 dependencies into a directory.
 
 Usage
-=====
+-----
 
 Create a basic chroot in the directory `$HOME/chroot` with only the binaries
 `/bin/bash` and `/bin/ls` provided.
@@ -17,7 +17,7 @@ option, which causes the program to take no action, and instead show you what
 would happen.
 
 Caveats
-=======
+-------
 
 This program does not attempt to identify anything other than library
 dependencies of ELF binaries. For example, it will not try to detect the
@@ -32,7 +32,7 @@ Some distributions (such as CentOS 7) symlink `/bin` -> `/usr/bin`. If your
 binaries depend on this, you will need to create these symlinks yourself.
 
 Thanks
-======
+------
 
 This program was inspired by this blog post:
 
